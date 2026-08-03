@@ -1,0 +1,28 @@
+// Nucleo-F411RE PA5 = TIM2_CH1 (AF1) — RC/servo sweep demo.
+// Timer clock: HSI 16 MHz at reset. Typical servo: 50 Hz, 1000..=2000 µs.
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let servo = machine.rc_out(machine.Port.A, 5, 2, 1, 1, 16000000, 50, 1000, 2000)
+    while true {
+        let mut pos: i32 = 0
+        while pos <= 100000 {
+            servo.out(pos, 0)
+            let mut i: i32 = 0
+            while i < 50000 {
+                i = i + 1
+            }
+            pos = pos + 5000
+        }
+        pos = 100000
+        while pos >= 0 {
+            servo.out(pos, 0)
+            let mut i: i32 = 0
+            while i < 50000 {
+                i = i + 1
+            }
+            pos = pos - 5000
+        }
+    }
+}

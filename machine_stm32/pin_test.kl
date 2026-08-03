@@ -4,8 +4,8 @@ import testing
 
 // Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
 
-fn test_version_is_two() {
-    testing.assert_eq_i32(version(), 2)
+fn test_version_is_three() {
+    testing.assert_eq_i32(version(), 3)
 }
 
 fn test_port_indices() {
