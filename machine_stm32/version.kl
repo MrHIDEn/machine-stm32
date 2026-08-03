@@ -1,5 +1,5 @@
 module machine_stm32
 
 pub fn version(): i32 {
-    return 4
+    return 5
 }

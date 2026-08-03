@@ -1,0 +1,18 @@
+module machine_stm32
+
+import testing
+
+fn test_spi_br_field_div() {
+    // 16 MHz, want ≤1 MHz → need div 16 → BR=3 (2,4,8,16)
+    testing.assert_eq_i32(spi_br_field(16000000, 1000000), 3)
+    // want ≤8 MHz → div 2 → BR=0
+    testing.assert_eq_i32(spi_br_field(16000000, 8000000), 0)
+    // very slow → BR=7
+    testing.assert_eq_i32(spi_br_field(16000000, 1), 7)
+}
+
+fn test_spi_base_map() {
+    testing.assert_eq_i32(spi_base(1), 0x40013000)
+    testing.assert_eq_i32(spi_base(2), 0x40003800)
+    testing.assert_eq_i32(spi_base(5), 0x40015000)
+}

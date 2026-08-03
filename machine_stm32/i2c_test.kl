@@ -1,0 +1,24 @@
+module machine_stm32
+
+import testing
+
+fn test_i2c_ccr_sm_100k() {
+    // 16 MHz / (2*100000) = 80
+    testing.assert_eq_i32(i2c_ccr(16000000, 100000), 80)
+}
+
+fn test_i2c_ccr_fm_400k() {
+    // 16 MHz / (3*400000) = 13, plus FS bit
+    testing.assert_eq_i32(i2c_ccr(16000000, 400000), 13 | (1 << 15))
+}
+
+fn test_i2c_trise() {
+    testing.assert_eq_i32(i2c_trise(16000000, 100000), 17)
+    testing.assert_eq_i32(i2c_trise(16000000, 400000), 5)
+}
+
+fn test_i2c_base_map() {
+    testing.assert_eq_i32(i2c_base(1), 0x40005400)
+    testing.assert_eq_i32(i2c_base(2), 0x40005800)
+    testing.assert_eq_i32(i2c_base(3), 0x40005C00)
+}

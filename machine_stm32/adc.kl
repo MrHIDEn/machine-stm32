@@ -1,0 +1,102 @@
+/// STM32F4 ADC1 (MMIO). F411/F401 have a single ADC (ADC1).
+/// Caller passes GPIO port/pin and ADC channel explicitly (no hidden pin map).
+module machine_stm32
+
+pub struct Adc {
+    sr: *mut volatile i32
+    cr2: *mut volatile i32
+    sqr3: *mut volatile i32
+    dr: *mut volatile i32
+    channel: i32
+}
+
+fn gpio_set_analog(port: Port, num: i32) {
+    let p = cast(i32, port)
+    let enr = rcc_ahb1enr()
+    *enr = *enr | (1 << p)
+    let base = gpio_base(port)
+    let moder = cast(*mut volatile i32, base)
+    let shift = num * 2
+    // MODER = 11 (analog)
+    *moder = *moder | (3 << shift)
+}
+
+fn adc1_enable_clock() {
+    let enr = rcc_apb2enr()
+    *enr = *enr | (1 << 8)
+}
+
+/// Configure ADC1 on `port`/`num` as analog input for `channel` (0..=18).
+/// Nucleo A0 often = PA0 = channel 0. Returns 12-bit converter (right-aligned).
+pub fn adc_out(port: Port, num: i32, channel: i32): Adc {
+    gpio_set_analog(port, num)
+    adc1_enable_clock()
+
+    let base = 0x40012000
+    let sr = cast(*mut volatile i32, base)
+    let cr1 = cast(*mut volatile i32, base + 0x04)
+    let cr2 = cast(*mut volatile i32, base + 0x08)
+    let smpr2 = cast(*mut volatile i32, base + 0x10)
+    let sqr3 = cast(*mut volatile i32, base + 0x34)
+    let dr = cast(*mut volatile i32, base + 0x4C)
+
+    let mut ch = channel
+    if ch < 0 {
+        ch = 0
+    }
+    if ch > 18 {
+        ch = 18
+    }
+
+    *cr1 = 0
+    *cr2 = 0
+    // long sample time on SMPR2 for channels 0..=9 (111 = 480 cycles)
+    if ch <= 9 {
+        let shift = ch * 3
+        *smpr2 = *smpr2 | (7 << shift)
+    }
+    // ADON
+    *cr2 = 1
+    // brief settle
+    let mut i: i32 = 0
+    while i < 100 {
+        i = i + 1
+    }
+
+    return Adc{ sr: sr, cr2: cr2, sqr3: sqr3, dr: dr, channel: ch }
+}
+
+/// Blocking single conversion — raw 12-bit result `0..=4095`.
+pub fn (a: Adc) read_u12(): i32 {
+    *(a.sqr3) = a.channel
+    // clear EOC
+    *(a.sr) = *(a.sr) & ~(1 << 1)
+    // SWSTART
+    *(a.cr2) = *(a.cr2) | (1 << 30)
+    while (*(a.sr) & (1 << 1)) == 0 {
+    }
+    return *(a.dr) & 4095
+}
+
+/// MicroPython-style scale: `0..=65535` from 12-bit raw.
+pub fn (a: Adc) read_u16(): i32 {
+    let raw = a.read_u12()
+    return (raw * 65535) / 4095
+}
+
+/// Host-safe scale helper (also used by tests).
+fn adc_u12_to_u16(raw: i32): i32 {
+    let mut r = raw
+    if r < 0 {
+        r = 0
+    }
+    if r > 4095 {
+        r = 4095
+    }
+    return (r * 65535) / 4095
+}
+
+/// Disable ADC (clear CR2). Does not touch GPIO.
+pub fn (a: Adc) deinit() {
+    *(a.cr2) = 0
+}

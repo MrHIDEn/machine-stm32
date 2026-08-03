@@ -1,0 +1,31 @@
+// Nucleo-F411RE Arduino I2C1: PB8 (SCL) / PB9 (SDA) AF4.
+// Configures I2C1 then blinks PA5. Call writeto/readfrom_into with a real slave.
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let bus = machine.i2c_out(
+        1,
+        machine.Port.B,
+        8,
+        4,
+        machine.Port.B,
+        9,
+        4,
+        16000000,
+        100000
+    )
+    let led = machine.pin_out(machine.Port.A, 5)
+    while true {
+        led.toggle()
+        let mut i: i32 = 0
+        while i < 800000 {
+            i = i + 1
+        }
+        // Empty writeto is still a START/ADDR — only use with a slave present.
+        // Keep handle referenced via deinit never path:
+        if false {
+            bus.deinit()
+        }
+    }
+}

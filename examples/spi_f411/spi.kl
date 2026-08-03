@@ -1,0 +1,29 @@
+// Nucleo-F411RE SPI2: PB13 (SCK) / PB14 (MISO) / PB15 (MOSI) AF5.
+// Soft NSS — CS left to the app (here unused). Clock out 0xA5 in a loop.
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let s = machine.spi_out(
+        2,
+        machine.Port.B,
+        13,
+        5,
+        machine.Port.B,
+        14,
+        5,
+        machine.Port.B,
+        15,
+        5,
+        16000000,
+        1000000,
+        0
+    )
+    while true {
+        let _r = s.write_read_u8(0xA5)
+        let mut i: i32 = 0
+        while i < 10000 {
+            i = i + 1
+        }
+    }
+}
