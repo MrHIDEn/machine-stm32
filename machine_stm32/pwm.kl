@@ -1,0 +1,200 @@
+/// STM32F4 general-purpose timer PWM (MMIO).
+/// Addresses: STM32F411 / F401-class APB1 TIM2–TIM5 + AHB1 GPIO AF.
+/// No hidden timer pick / clock tree — caller passes tim, ch, af, tim_clk_hz.
+module machine_stm32
+
+pub struct Pwm {
+    cr1: *mut volatile i32
+    ccer: *mut volatile i32
+    egr: *mut volatile i32
+    psc: *mut volatile i32
+    arr: *mut volatile i32
+    ccr: *mut volatile i32
+    ccer_en: i32
+    tim_clk_hz: i32
+}
+
+fn rcc_apb1enr(): *mut volatile i32 {
+    return cast(*mut volatile i32, 0x40023840)
+}
+
+fn tim_apb1_base(tim: i32): i32 {
+    // TIM2 @ 0x40000000, TIM3 +0x400, TIM4 +0x800, TIM5 +0xC00
+    return 0x40000000 + (tim - 2) * 0x400
+}
+
+fn gpio_afr_addr(port: Port, num: i32): *mut volatile i32 {
+    let base = gpio_base(port)
+    if num < 8 {
+        return cast(*mut volatile i32, base + 0x20)
+    }
+    return cast(*mut volatile i32, base + 0x24)
+}
+
+fn gpio_set_af(port: Port, num: i32, af: i32) {
+    let p = cast(i32, port)
+    let enr = rcc_ahb1enr()
+    *enr = *enr | (1 << p)
+
+    let base = gpio_base(port)
+    let moder = cast(*mut volatile i32, base)
+    let shift = num * 2
+    // MODER = 10 (alternate function)
+    *moder = (*moder & ~(3 << shift)) | (2 << shift)
+
+    let afr = gpio_afr_addr(port, num)
+    let mut n = num
+    if n >= 8 {
+        n = n - 8
+    }
+    let ashift = n * 4
+    *afr = (*afr & ~(15 << ashift)) | ((af & 15) << ashift)
+}
+
+fn tim_enable_apb1(tim: i32) {
+    let enr = rcc_apb1enr()
+    let bit = tim - 2
+    *enr = *enr | (1 << bit)
+}
+
+fn ccmr_pwm1_bits(ch: i32): i32 {
+    // OCxM = 110 (PWM mode 1), OCxPE = 1 → nibble pattern 0x68 in the channel byte
+    if ch == 1 {
+        return 0x68
+    }
+    if ch == 2 {
+        return 0x6800
+    }
+    if ch == 3 {
+        return 0x68
+    }
+    return 0x6800
+}
+
+fn ccmr_clear_mask(ch: i32): i32 {
+    if ch == 1 {
+        return 0xFF
+    }
+    if ch == 2 {
+        return 0xFF00
+    }
+    if ch == 3 {
+        return 0xFF
+    }
+    return 0xFF00
+}
+
+/// Configure `port`/`num` as AF PWM on APB1 timer `tim` (2..=5), channel `ch`
+/// (1..=4), alternate function `af`, with timer input clock `tim_clk_hz`
+/// (after APB multiplier — board/app responsibility; HSI default often 16_000_000).
+/// Starts the timer at 1 kHz, duty 0.
+pub fn pwm_out(
+    port: Port,
+    num: i32,
+    tim: i32,
+    ch: i32,
+    af: i32,
+    tim_clk_hz: i32
+): Pwm {
+    gpio_set_af(port, num, af)
+    tim_enable_apb1(tim)
+
+    let base = tim_apb1_base(tim)
+    let cr1 = cast(*mut volatile i32, base)
+    let egr = cast(*mut volatile i32, base + 0x14)
+    let ccmr1 = cast(*mut volatile i32, base + 0x18)
+    let ccmr2 = cast(*mut volatile i32, base + 0x1C)
+    let ccer = cast(*mut volatile i32, base + 0x20)
+    let psc = cast(*mut volatile i32, base + 0x28)
+    let arr = cast(*mut volatile i32, base + 0x2C)
+    let ccr = cast(*mut volatile i32, base + 0x34 + (ch - 1) * 4)
+
+    // Disable counter while configuring.
+    *cr1 = 0
+
+    if ch <= 2 {
+        let mask = ccmr_clear_mask(ch)
+        *ccmr1 = (*ccmr1 & ~mask) | ccmr_pwm1_bits(ch)
+    } else {
+        let mask = ccmr_clear_mask(ch)
+        *ccmr2 = (*ccmr2 & ~mask) | ccmr_pwm1_bits(ch)
+    }
+
+    let ccer_en = 1 << ((ch - 1) * 4)
+    *ccer = *ccer | ccer_en
+
+    let pwm = Pwm{
+        cr1: cr1,
+        ccer: ccer,
+        egr: egr,
+        psc: psc,
+        arr: arr,
+        ccr: ccr,
+        ccer_en: ccer_en,
+        tim_clk_hz: tim_clk_hz
+    }
+    pwm.freq(1000)
+    pwm.duty_u16(0)
+    // ARPE + CEN
+    *cr1 = 0x81
+    return pwm
+}
+
+/// Set PWM frequency in Hz. Uses `tim_clk_hz` from `pwm_out` (explicit — no
+/// hidden clock read). Chooses PSC/ARR so ARR stays within 16 bits when possible.
+pub fn (p: Pwm) freq(hz: i32) {
+    let mut f = hz
+    if f < 1 {
+        f = 1
+    }
+    let mut clk = p.tim_clk_hz
+    if clk < 1 {
+        clk = 1
+    }
+    let mut ticks = clk / f
+    if ticks < 1 {
+        ticks = 1
+    }
+    let mut psc_v: i32 = 0
+    let mut arr_v = ticks - 1
+    if arr_v > 65535 {
+        psc_v = (ticks + 65535) / 65536 - 1
+        if psc_v < 0 {
+            psc_v = 0
+        }
+        arr_v = ticks / (psc_v + 1) - 1
+        if arr_v > 65535 {
+            arr_v = 65535
+        }
+        if arr_v < 0 {
+            arr_v = 0
+        }
+    }
+    *(p.psc) = psc_v
+    *(p.arr) = arr_v
+    // UG — load PSC/ARR into shadow registers
+    *(p.egr) = 1
+}
+
+/// Duty cycle in MicroPython-style units: 0 = off, 65535 ≈ full on.
+pub fn (p: Pwm) duty_u16(duty: i32) {
+    let mut d = duty
+    if d < 0 {
+        d = 0
+    }
+    if d > 65535 {
+        d = 65535
+    }
+    let arr_v = *(p.arr)
+    let mut ccr_v = (d * (arr_v + 1)) / 65536
+    if ccr_v > arr_v {
+        ccr_v = arr_v
+    }
+    *(p.ccr) = ccr_v
+}
+
+/// Stop this channel and the timer counter (explicit — does not touch GPIO AF).
+pub fn (p: Pwm) deinit() {
+    *(p.ccer) = *(p.ccer) & ~p.ccer_en
+    *(p.cr1) = 0
+}
