@@ -1,0 +1,15 @@
+module machine
+
+import testing
+
+// Host-safe checks only (no MMIO). Skipped on package import (*_test.kl).
+
+fn test_version_is_one() {
+    testing.assert_eq_i32(version(), 1)
+}
+
+fn test_port_indices() {
+    testing.assert_eq_i32(cast(i32, Port.A), 0)
+    testing.assert_eq_i32(cast(i32, Port.B), 1)
+    testing.assert_eq_i32(cast(i32, Port.H), 7)
+}

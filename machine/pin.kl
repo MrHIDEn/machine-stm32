@@ -1,0 +1,97 @@
+// STM32F4 GPIO Pin (MMIO). Explicit clocks — no hidden init.
+// Addresses match STM32F411 / F401 family AHB1 GPIO + RCC.
+module machine
+
+// GPIO port letter → AHB1 index (F411: A..E, H).
+pub enum Port: i32 {
+    A = 0
+    B = 1
+    C = 2
+    D = 3
+    E = 4
+    H = 7
+}
+
+pub struct Pin {
+    odr: *mut volatile i32
+    bsrr: *mut volatile i32
+    idr: *mut volatile i32
+    mask: i32
+}
+
+fn rcc_ahb1enr(): *mut volatile i32 {
+    return cast(*mut volatile i32, 0x40023830)
+}
+
+fn gpio_base(port: Port): i32 {
+    return 0x40020000 + cast(i32, port) * 0x400
+}
+
+// Configure port/num as push-pull output (MODER = 01). Enables the GPIO clock.
+pub fn pin_out(port: Port, num: i32): Pin {
+    let p = cast(i32, port)
+    let enr = rcc_ahb1enr()
+    *enr = *enr | (1 << p)
+
+    let base = gpio_base(port)
+    let moder = cast(*mut volatile i32, base)
+    let shift = num * 2
+    *moder = (*moder & ~(3 << shift)) | (1 << shift)
+
+    let odr_a = base + 0x14
+    let bsrr_a = base + 0x18
+    let idr_a = base + 0x10
+    let odr = cast(*mut volatile i32, odr_a)
+    let bsrr = cast(*mut volatile i32, bsrr_a)
+    let idr = cast(*mut volatile i32, idr_a)
+    let mask = 1 << num
+    return Pin{ odr: odr, bsrr: bsrr, idr: idr, mask: mask }
+}
+
+// Configure port/num as floating input (MODER = 00). Enables the GPIO clock.
+pub fn pin_in(port: Port, num: i32): Pin {
+    let p = cast(i32, port)
+    let enr = rcc_ahb1enr()
+    *enr = *enr | (1 << p)
+
+    let base = gpio_base(port)
+    let moder = cast(*mut volatile i32, base)
+    let shift = num * 2
+    *moder = *moder & ~(3 << shift)
+
+    let odr_a = base + 0x14
+    let bsrr_a = base + 0x18
+    let idr_a = base + 0x10
+    let odr = cast(*mut volatile i32, odr_a)
+    let bsrr = cast(*mut volatile i32, bsrr_a)
+    let idr = cast(*mut volatile i32, idr_a)
+    let mask = 1 << num
+    return Pin{ odr: odr, bsrr: bsrr, idr: idr, mask: mask }
+}
+
+pub fn (p: Pin) high() {
+    *(p.bsrr) = p.mask
+}
+
+pub fn (p: Pin) low() {
+    *(p.bsrr) = p.mask << 16
+}
+
+pub fn (p: Pin) toggle() {
+    *(p.odr) = *(p.odr) ^ p.mask
+}
+
+pub fn (p: Pin) set(v: i32) {
+    if v != 0 {
+        p.high()
+    } else {
+        p.low()
+    }
+}
+
+pub fn (p: Pin) value(): i32 {
+    if (*(p.idr) & p.mask) != 0 {
+        return 1
+    }
+    return 0
+}

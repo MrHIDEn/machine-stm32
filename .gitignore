@@ -1,0 +1,8 @@
+# Klin / build artifacts
+out/
+*.elf
+*.o
+*.bin
+*.hex
+.task/
+.DS_Store
