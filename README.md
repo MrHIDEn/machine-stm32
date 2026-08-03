@@ -34,8 +34,6 @@ examples/blink_f411/     # Nucleo-F411RE PA5
 
 ## Usage
 
-After the GitHub repo is named **`machine_stm32`** (underscore):
-
 ```klin
 import "github/mrhiden/machine_stm32" machine
 
@@ -49,7 +47,7 @@ fn main() {
 ```
 
 ```sh
-klin get github/mrhiden/machine_stm32@main
+klin get github/mrhiden/machine_stm32@v0.1.0
 ```
 
 Local / in-repo example:
