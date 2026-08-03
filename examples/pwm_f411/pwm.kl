@@ -1,0 +1,30 @@
+// Nucleo-F411RE user LED = PA5 = TIM2_CH1 (AF1).
+// Timer clock: HSI 16 MHz at reset (no PLL) — pass explicitly to pwm_out.
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let led = machine.pwm_out(machine.Port.A, 5, 2, 1, 1, 16000000)
+    led.freq(1000)
+    // Soft fade on the LED (busy-wait; tune loops on hardware).
+    while true {
+        let mut d: i32 = 0
+        while d <= 65535 {
+            led.duty_u16(d)
+            let mut i: i32 = 0
+            while i < 2000 {
+                i = i + 1
+            }
+            d = d + 1024
+        }
+        d = 65535
+        while d >= 0 {
+            led.duty_u16(d)
+            let mut i: i32 = 0
+            while i < 2000 {
+                i = i + 1
+            }
+            d = d - 1024
+        }
+    }
+}
