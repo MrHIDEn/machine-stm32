@@ -1,11 +1,11 @@
 # machine_stm32
 
-STM32 port of a MicroPython-shaped **`machine`** API for [Klin](https://github.com/MrHIDEn/klin).
+STM32 port of a MicroPython-shaped **`machine`** API for [Klin](https://github.com/klin-lang/klin).
 
 Not a MicroPython port. No GC, no hidden heap, no hidden clocks — Pin configures
 the GPIO clock and mode explicitly via MMIO (STM32F4 AHB1).
 
-Decision / catalog: [Klin issue 061](https://github.com/MrHIDEn/klin/blob/main/issues/061-micropython-machine-api.md).
+Decision / catalog: [Klin issue 061](https://github.com/klin-lang/klin/blob/main/issues/061-micropython-machine-api.md).
 
 ## Status
 
@@ -19,7 +19,7 @@ Target family for addresses: **STM32F411 / F401**-class (Nucleo-F411RE LED = **P
 
 ## Requirements
 
-- [Klin](https://github.com/MrHIDEn/klin) compiler (`klin` or `dart run path/to/bin/klin.dart`)
+- [Klin](https://github.com/klin-lang/klin) compiler (`klin` or `dart run path/to/bin/klin.dart`)
 - For the blink ELF: `arm-none-eabi-gcc`
 
 ## Layout
@@ -35,7 +35,7 @@ examples/blink_f411/     # Nucleo-F411RE PA5
 ## Usage
 
 ```klin
-import "github/mrhiden/machine_stm32" machine
+import "github/klin-lang/machine_stm32" machine
 
 @[link("startup.s")]
 fn main() {
@@ -47,7 +47,7 @@ fn main() {
 ```
 
 ```sh
-klin get github/mrhiden/machine_stm32@v0.1.0
+klin get github/klin-lang/machine_stm32@v0.1.0
 ```
 
 Local / in-repo example:
