@@ -1,0 +1,13 @@
+// Nucleo-F411RE: ADC1 PA0 (A0) → PWM brightness on PA5 (TIM2_CH1).
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let adc = machine.adc_out(machine.Port.A, 0, 0)
+    let led = machine.pwm_out(machine.Port.A, 5, 2, 1, 1, 16000000)
+    led.freq(1000)
+    while true {
+        let v = adc.read_u16()
+        led.duty_u16(v)
+    }
+}

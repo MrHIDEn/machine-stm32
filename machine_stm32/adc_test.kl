@@ -1,0 +1,18 @@
+module machine_stm32
+
+import testing
+
+fn test_adc_u12_to_u16_edges() {
+    testing.assert_eq_i32(adc_u12_to_u16(0), 0)
+    testing.assert_eq_i32(adc_u12_to_u16(4095), 65535)
+}
+
+fn test_adc_u12_to_u16_mid() {
+    // 2048 * 65535 / 4095 = 32775 (integer trunc)
+    testing.assert_eq_i32(adc_u12_to_u16(2048), 32775)
+}
+
+fn test_adc_u12_to_u16_clamp() {
+    testing.assert_eq_i32(adc_u12_to_u16(0 - 1), 0)
+    testing.assert_eq_i32(adc_u12_to_u16(5000), 65535)
+}

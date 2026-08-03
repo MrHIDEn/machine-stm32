@@ -1,0 +1,180 @@
+/// STM32F4 SPI master (MMIO). SPI1–SPI5 on F411/F401-class.
+/// No hidden clock — caller passes `spi_clk_hz` (after APB divider) and `baud_hz`.
+/// NSS is software (SSM+SSI); chip-select is a separate `Pin` in the app.
+module machine_stm32
+
+pub struct Spi {
+    cr1: *mut volatile i32
+    sr: *mut volatile i32
+    dr: *mut volatile i32
+    dr_u8: *mut volatile u8
+}
+
+/// BR field 0..=7 for CR1: divisor = 2 << BR. Picks the fastest rate ≤ `baud_hz`.
+fn spi_br_field(spi_clk_hz: i32, baud_hz: i32): i32 {
+    let mut clk = spi_clk_hz
+    if clk < 1 {
+        clk = 1
+    }
+    let mut baud = baud_hz
+    if baud < 1 {
+        baud = 1
+    }
+    let mut br: i32 = 0
+    let mut div: i32 = 2
+    while br < 7 {
+        if clk / div <= baud {
+            return br
+        }
+        div = div * 2
+        br = br + 1
+    }
+    return 7
+}
+
+fn spi_base(spi: i32): i32 {
+    if spi == 1 {
+        return 0x40013000
+    }
+    if spi == 2 {
+        return 0x40003800
+    }
+    if spi == 3 {
+        return 0x40003C00
+    }
+    if spi == 4 {
+        return 0x40013400
+    }
+    // SPI5
+    return 0x40015000
+}
+
+fn spi_enable_clock(spi: i32) {
+    if spi == 1 {
+        let enr = rcc_apb2enr()
+        *enr = *enr | (1 << 12)
+        return
+    }
+    if spi == 4 {
+        let enr = rcc_apb2enr()
+        *enr = *enr | (1 << 13)
+        return
+    }
+    if spi == 5 {
+        let enr = rcc_apb2enr()
+        *enr = *enr | (1 << 20)
+        return
+    }
+    let enr = rcc_apb1enr()
+    if spi == 3 {
+        *enr = *enr | (1 << 15)
+        return
+    }
+    // SPI2
+    *enr = *enr | (1 << 14)
+}
+
+/// Configure SPI master `spi` (1..=5). `mode` is 0..=3 (CPOL/CPHA).
+/// Pins: SCK / MISO / MOSI with explicit AF. Soft NSS (app drives CS via `Pin`).
+/// Example SPI2 on Nucleo: PB13/PB14/PB15 AF5, HSI → 16_000_000.
+pub fn spi_out(
+    spi: i32,
+    sck_port: Port,
+    sck_num: i32,
+    sck_af: i32,
+    miso_port: Port,
+    miso_num: i32,
+    miso_af: i32,
+    mosi_port: Port,
+    mosi_num: i32,
+    mosi_af: i32,
+    spi_clk_hz: i32,
+    baud_hz: i32,
+    mode: i32
+): Spi {
+    gpio_set_af(sck_port, sck_num, sck_af)
+    gpio_set_af(miso_port, miso_num, miso_af)
+    gpio_set_af(mosi_port, mosi_num, mosi_af)
+    spi_enable_clock(spi)
+
+    let base = spi_base(spi)
+    let cr1 = cast(*mut volatile i32, base)
+    let sr = cast(*mut volatile i32, base + 0x08)
+    let dr = cast(*mut volatile i32, base + 0x0C)
+    let dr_u8 = cast(*mut volatile u8, base + 0x0C)
+
+    *cr1 = 0
+    let br = spi_br_field(spi_clk_hz, baud_hz)
+    let mut m = mode
+    if m < 0 {
+        m = 0
+    }
+    if m > 3 {
+        m = 3
+    }
+    // MSTR | SSM | SSI | BR | CPOL/CPHA | SPE
+    *cr1 = (1 << 2) | (1 << 9) | (1 << 8) | (br << 3) | (m & 3) | (1 << 6)
+
+    return Spi{ cr1: cr1, sr: sr, dr: dr, dr_u8: dr_u8 }
+}
+
+/// Full-duplex transfer one byte. Returns the received byte (0..=255).
+pub fn (s: Spi) write_read_u8(b: i32): i32 {
+    while (*(s.sr) & (1 << 1)) == 0 {
+    }
+    *(s.dr) = b & 255
+    while (*(s.sr) & 1) == 0 {
+    }
+    return *(s.dr) & 255
+}
+
+/// Write every byte in `buf` (discards RX bytes).
+pub fn (s: Spi) write(buf: []u8) {
+    let mut i: i32 = 0
+    while i < buf.len {
+        while (*(s.sr) & (1 << 1)) == 0 {
+        }
+        *(s.dr_u8) = buf[i]
+        while (*(s.sr) & 1) == 0 {
+        }
+        let drain = *(s.dr)
+        i = i + 1 + drain * 0
+    }
+}
+
+/// Fill `buf` by clocking out 0xFF (readinto).
+pub fn (s: Spi) readinto(buf: []u8) {
+    let mut i: i32 = 0
+    while i < buf.len {
+        while (*(s.sr) & (1 << 1)) == 0 {
+        }
+        *(s.dr) = 255
+        while (*(s.sr) & 1) == 0 {
+        }
+        buf[i] = *(s.dr_u8)
+        i = i + 1
+    }
+}
+
+/// Write `wbuf` and capture into `rbuf` (same length; uses `rbuf.len`).
+pub fn (s: Spi) write_readinto(wbuf: []u8, rbuf: []u8) {
+    let mut n = rbuf.len
+    if wbuf.len < n {
+        n = wbuf.len
+    }
+    let mut i: i32 = 0
+    while i < n {
+        while (*(s.sr) & (1 << 1)) == 0 {
+        }
+        *(s.dr_u8) = wbuf[i]
+        while (*(s.sr) & 1) == 0 {
+        }
+        rbuf[i] = *(s.dr_u8)
+        i = i + 1
+    }
+}
+
+/// Disable SPI (clear CR1). Does not touch GPIO.
+pub fn (s: Spi) deinit() {
+    *(s.cr1) = 0
+}
