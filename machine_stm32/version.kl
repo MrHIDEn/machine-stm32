@@ -1,4 +1,4 @@
-module machine
+module machine_stm32
 
 pub fn version(): i32 {
     return 1

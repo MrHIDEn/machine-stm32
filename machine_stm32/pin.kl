@@ -1,6 +1,6 @@
 // STM32F4 GPIO Pin (MMIO). Explicit clocks — no hidden init.
 // Addresses match STM32F411 / F401 family AHB1 GPIO + RCC.
-module machine
+module machine_stm32
 
 // GPIO port letter → AHB1 index (F411: A..E, H).
 pub enum Port: i32 {

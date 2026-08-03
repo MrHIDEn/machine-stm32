@@ -13,7 +13,7 @@ all: blink.elf
 
 LINK_OBJS := $(shell test -f out/blink.link && cat out/blink.link)
 
-out/blink.c out/blink.link: blink.kl $(wildcard ../../machine/*.kl)
+out/blink.c out/blink.link: blink.kl $(wildcard ../../machine_stm32/*.kl)
 	@case "$(KLIN)" in \
 	  *.dart) dart run "$(KLIN)" --emit-c blink.kl ;; \
 	  *) "$(KLIN)" --emit-c blink.kl ;; \

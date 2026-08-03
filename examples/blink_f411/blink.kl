@@ -1,5 +1,5 @@
-// Nucleo-F411RE user LED = PA5, driven through machine.Pin.
-import "../../machine"
+// Nucleo-F411RE user LED = PA5, driven through machine_stm32.Pin.
+import "../../machine_stm32" machine
 
 @[link("startup.s")]
 fn main() {

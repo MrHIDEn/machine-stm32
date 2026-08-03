@@ -1,4 +1,4 @@
-module machine
+module machine_stm32
 
 import testing
 
