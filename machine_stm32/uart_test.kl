@@ -1,0 +1,27 @@
+module machine_stm32
+
+import testing
+
+// Host-safe baud BRR checks (no MMIO).
+
+fn test_uart_brr_115200_hsi16() {
+    // round(16_000_000 / 115200) = 139
+    testing.assert_eq_i32(uart_brr(16000000, 115200), 139)
+}
+
+fn test_uart_brr_9600() {
+    testing.assert_eq_i32(uart_brr(16000000, 9600), 1667)
+}
+
+fn test_uart_brr_guards() {
+    testing.assert_eq_i32(uart_brr(0, 115200), 0)
+    testing.assert_eq_i32(uart_brr(16000000, 0), 16000000)
+}
+
+fn test_usart_base_map() {
+    testing.assert_eq_i32(usart_base(1), 0x40011000)
+    testing.assert_eq_i32(usart_base(2), 0x40004400)
+    testing.assert_eq_i32(usart_base(6), 0x40011400)
+    // unknown → USART2 map (Nucleo default)
+    testing.assert_eq_i32(usart_base(99), 0x40004400)
+}

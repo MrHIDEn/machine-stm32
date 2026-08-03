@@ -1,0 +1,37 @@
+// Nucleo-F411RE ST-Link VCP: USART2 PA2 (TX) / PA3 (RX) AF7.
+// USART clock: HSI 16 MHz at reset. 115200 8N1.
+import "../../machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    let u = machine.uart_out(
+        2,
+        machine.Port.A,
+        2,
+        7,
+        machine.Port.A,
+        3,
+        7,
+        16000000,
+        115200
+    )
+    let mut msg: [6]u8
+    msg[0] = 104
+    msg[1] = 101
+    msg[2] = 108
+    msg[3] = 108
+    msg[4] = 111
+    msg[5] = 10
+    while true {
+        u.write(msg)
+        // echo any received byte
+        if u.any() {
+            let b = u.read_u8()
+            u.write_u8(b)
+        }
+        let mut i: i32 = 0
+        while i < 800000 {
+            i = i + 1
+        }
+    }
+}

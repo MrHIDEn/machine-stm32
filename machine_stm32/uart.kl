@@ -1,0 +1,130 @@
+/// STM32F4 USART (MMIO). USART1 / USART2 / USART6 on F411/F401-class.
+/// No hidden baud/clock — caller passes `usart_clk_hz` (after APB divider).
+module machine_stm32
+
+pub struct Uart {
+    sr: *mut volatile i32
+    dr: *mut volatile i32
+    dr_u8: *mut volatile u8
+    cr1: *mut volatile i32
+}
+
+fn rcc_apb2enr(): *mut volatile i32 {
+    return cast(*mut volatile i32, 0x40023844)
+}
+
+/// USARTDIV-style BRR value for OVER8=0: `round(usart_clk_hz / baud)`.
+fn uart_brr(usart_clk_hz: i32, baud: i32): i32 {
+    let mut clk = usart_clk_hz
+    if clk < 1 {
+        clk = 1
+    }
+    let mut b = baud
+    if b < 1 {
+        b = 1
+    }
+    return (clk + b / 2) / b
+}
+
+fn usart_base(usart: i32): i32 {
+    if usart == 1 {
+        return 0x40011000
+    }
+    if usart == 6 {
+        return 0x40011400
+    }
+    // USART2 (default / typical Nucleo VCP)
+    return 0x40004400
+}
+
+fn usart_enable_clock(usart: i32) {
+    if usart == 1 {
+        let enr = rcc_apb2enr()
+        *enr = *enr | (1 << 4)
+        return
+    }
+    if usart == 6 {
+        let enr = rcc_apb2enr()
+        *enr = *enr | (1 << 5)
+        return
+    }
+    let enr = rcc_apb1enr()
+    *enr = *enr | (1 << 17)
+}
+
+/// Configure USART `usart` (1, 2, or 6) on TX/RX pins with explicit AF and
+/// peripheral clock `usart_clk_hz`. 8N1, OVER8=0. Starts with UE+TE+RE.
+/// Nucleo-F411RE ST-Link VCP: USART2, PA2/PA3 AF7, HSI → 16_000_000.
+pub fn uart_out(
+    usart: i32,
+    tx_port: Port,
+    tx_num: i32,
+    tx_af: i32,
+    rx_port: Port,
+    rx_num: i32,
+    rx_af: i32,
+    usart_clk_hz: i32,
+    baud: i32
+): Uart {
+    gpio_set_af(tx_port, tx_num, tx_af)
+    gpio_set_af(rx_port, rx_num, rx_af)
+    usart_enable_clock(usart)
+
+    let base = usart_base(usart)
+    let sr = cast(*mut volatile i32, base)
+    let dr = cast(*mut volatile i32, base + 0x04)
+    let dr_u8 = cast(*mut volatile u8, base + 0x04)
+    let brr = cast(*mut volatile i32, base + 0x08)
+    let cr1 = cast(*mut volatile i32, base + 0x0C)
+
+    // UE off while programming baud.
+    *cr1 = 0
+    *brr = uart_brr(usart_clk_hz, baud)
+    // UE | TE | RE
+    *cr1 = (1 << 13) | (1 << 3) | (1 << 2)
+
+    return Uart{ sr: sr, dr: dr, dr_u8: dr_u8, cr1: cr1 }
+}
+
+/// Blocking write one byte (`b` masked to 8 bits). Waits for TXE.
+pub fn (u: Uart) write_u8(b: i32) {
+    while (*(u.sr) & (1 << 7)) == 0 {
+    }
+    *(u.dr) = b & 255
+}
+
+/// True when RXNE — a byte can be read without blocking.
+pub fn (u: Uart) any(): bool {
+    return (*(u.sr) & (1 << 5)) != 0
+}
+
+/// Blocking read one byte (0..=255). Waits for RXNE.
+pub fn (u: Uart) read_u8(): i32 {
+    while (*(u.sr) & (1 << 5)) == 0 {
+    }
+    return *(u.dr) & 255
+}
+
+/// Non-blocking read: byte 0..=255, or −1 if RX empty.
+pub fn (u: Uart) try_read_u8(): i32 {
+    if (*(u.sr) & (1 << 5)) == 0 {
+        return 0 - 1
+    }
+    return *(u.dr) & 255
+}
+
+/// Blocking write of every byte in `buf` (waits TXE per byte).
+pub fn (u: Uart) write(buf: []u8) {
+    let mut i: i32 = 0
+    while i < buf.len {
+        while (*(u.sr) & (1 << 7)) == 0 {
+        }
+        *(u.dr_u8) = buf[i]
+        i = i + 1
+    }
+}
+
+/// Disable USART (clear CR1). Does not touch GPIO AF.
+pub fn (u: Uart) deinit() {
+    *(u.cr1) = 0
+}

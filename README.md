@@ -2,8 +2,8 @@
 
 STM32 port of a MicroPython-shaped **`machine`** API for [Klin](https://github.com/klin-lang/klin).
 
-Not a MicroPython port. No GC, no hidden heap, no hidden clocks — Pin/Pwm/Rc
-configure GPIO and timers explicitly via MMIO (STM32F4 AHB1 / APB1).
+Not a MicroPython port. No GC, no hidden heap, no hidden clocks — Pin/Pwm/Rc/Uart
+configure GPIO and peripherals explicitly via MMIO (STM32F4 AHB1 / APB1 / APB2).
 
 Decision / catalog: [Klin issue 061](https://github.com/klin-lang/klin/blob/main/issues/061-micropython-machine-api.md).
 
@@ -13,12 +13,12 @@ Decision / catalog: [Klin issue 061](https://github.com/klin-lang/klin/blob/main
 |---|---|
 | `Pin` (`pin_out` / `pin_in`, `high` / `low` / `toggle` / `set` / `value`) | MVP |
 | `Pwm` (`pwm_out`, `freq`, `duty_u16`, `deinit`) | MVP (`@v0.2.0`) |
-| `Rc` (`rc_out`, `out` / `out_f32` / `pulse_us` / `deinit`) | MVP (`@v0.3.0`) |
-| `Uart`, … | later |
+| `Rc` (`rc_out`, `out` / `out_f32` / `pulse_us`, `deinit`) | MVP (`@v0.3.0`) |
+| `Uart` (`uart_out`, `write_u8` / `write` / `read_u8` / `try_read_u8` / `any` / `deinit`) | MVP (`@v0.4.0`) |
 | Other MCU families | separate repos / ports (e.g. `machine_rp`) |
 
 Target family for addresses: **STM32F411 / F401**-class (hardcoded MMIO — no
-runtime chip detect). Nucleo-F411RE LED = **PA5** (GPIO or TIM2_CH1 AF1).
+runtime chip detect). Nucleo-F411RE LED = **PA5**; ST-Link VCP = **USART2 PA2/PA3**.
 
 ## Requirements
 
@@ -29,14 +29,13 @@ runtime chip detect). Nucleo-F411RE LED = **PA5** (GPIO or TIM2_CH1 AF1).
 
 ```text
 machine_stm32/           # module machine_stm32 (directory package)
-  version.kl             # version() → 3
-  pin.kl
-  pwm.kl
-  rc.kl
-  pin_test.kl / rc_test.kl   # skipped on import
+  version.kl             # version() → 4
+  pin.kl / pwm.kl / rc.kl / uart.kl
+  *_test.kl              # skipped on import
 examples/blink_f411/     # Nucleo-F411RE PA5 Pin toggle
 examples/pwm_f411/       # PA5 TIM2_CH1 fade
 examples/rc_f411/        # PA5 TIM2_CH1 servo sweep
+examples/uart_f411/      # USART2 PA2/PA3 VCP hello + echo
 ```
 
 ## Usage — Pin
@@ -88,11 +87,37 @@ fn main() {
 }
 ```
 
-```sh
-klin get github/klin-lang/machine_stm32@v0.3.0
+## Usage — Uart
+
+Caller passes USART instance (1 / 2 / 6), TX/RX port+pin+AF, peripheral clock,
+and baud. 8N1, OVER8=0. No hidden clock-tree read.
+
+```klin
+import "github/klin-lang/machine_stm32" machine
+
+@[link("startup.s")]
+fn main() {
+    // Nucleo VCP: USART2 PA2/PA3 AF7; HSI 16 MHz
+    let u = machine.uart_out(
+        2,
+        machine.Port.A, 2, 7,
+        machine.Port.A, 3, 7,
+        16000000,
+        115200
+    )
+    u.write_u8(65)   // 'A'
+    if u.any() {
+        let b = u.read_u8()
+        u.write_u8(b)
+    }
+}
 ```
 
-## Pwm / Rc shape (convention for other `machine_*` ports)
+```sh
+klin get github/klin-lang/machine_stm32@v0.4.0
+```
+
+## Shape (convention for other `machine_*` ports)
 
 | Piece | Role |
 |---|---|
@@ -100,6 +125,8 @@ klin get github/klin-lang/machine_stm32@v0.3.0
 | `freq` / `duty_u16` / `deinit` | MicroPython-style PWM |
 | `rc_out(…, freq_hz, us_min, us_max)` | servo/RC on same HW args |
 | `out` / `out_f32` / `pulse_us` / `deinit` | position + trim / raw µs |
+| `uart_out(…, usart_clk_hz, baud)` | USART factory — chip-specific pins/AF |
+| `write_u8` / `write` / `read_u8` / `try_read_u8` / `any` / `deinit` | byte I/O |
 
 ## Examples
 
@@ -115,6 +142,10 @@ make KLIN=/path/to/klin/bin/klin.dart
 cd examples/rc_f411
 make KLIN=/path/to/klin/bin/klin.dart
 # → rc.elf
+
+cd examples/uart_f411
+make KLIN=/path/to/klin/bin/klin.dart
+# → uart.elf
 ```
 
 ## Tests
